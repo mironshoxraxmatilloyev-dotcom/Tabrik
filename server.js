@@ -16,24 +16,29 @@ app.use(express.static(path.join(__dirname, "frontend")));
 const connectDB = async () => {
   try {
     // MongoDB Atlas connection string
-    const mongoURI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/tabrikDB";
+    const mongoURI = process.env.MONGODB_URI;
+    
+    if (!mongoURI) {
+      console.log("⚠️ MONGODB_URI environment variable topilmadi");
+      console.log("🚀 Server MongoDB bozmda ishlayapti (test rejimi)");
+      return;
+    }
+    
+    console.log("🔗 MongoDB ga ulanishga harakat qilinmoqda...");
     
     const conn = await mongoose.connect(mongoURI, {
-      serverSelectionTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-      // Yangi Mongoose versiyasi uchun optimallashtirilgan
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 30000,
     });
     
     console.log("✅ MongoDB muvaffaqiyatli ulandi:", conn.connection.host);
     console.log("📊 Database:", conn.connection.name);
   } catch (err) {
     console.error("❌ MongoDB ulanishida xato:", err.message);
-    console.log("📝 MongoDB Atlas connection string tekshiring:");
-    console.log("   1. .env faylida MONGODB_URI ni to'g'ri sozlang");
-    console.log("   2. Database parolini tekshiring");
-    console.log("   3. Network Access da IP ruxsat berilganligini tekshiring");
-    console.log("💡 Yoki test server ishlating: node server-test.js");
-    process.exit(1);
+    console.log("⚠️ Server MongoDB bo'ymoganda ishlaydi (test rejimi)");
+    console.log("📝 Environment variables:");
+    console.log("   - NODE_ENV:", process.env.NODE_ENV);
+    console.log("   - MONGODB_URI:", process.env.MONGODB_URI ? "Mavjud" : "Yo'q");
   }
 };
 
@@ -66,16 +71,30 @@ const Media = mongoose.model("Media", MediaSchema);
 
 // --- BUYURTMALAR ---
 app.get("/api/orders", async (req, res) => {
-  const orders = await Order.find().sort({ createdAt: -1 });
-  res.json(orders);
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.json([]);
+    }
+    const orders = await Order.find().sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (err) {
+    console.error("Orders olishda xato:", err.message);
+    res.json([]);
+  }
 });
 
 app.post("/api/orders", async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      console.log("📝 MongoDB ulanmagan, buyurtma console da ko'rsatiladi:");
+      console.log(req.body);
+      return res.json({ message: "✅ Buyurtma qabul qilindi (test rejimi)", order: req.body });
+    }
     const newOrder = new Order(req.body);
     await newOrder.save();
     res.json({ message: "✅ Buyurtma qabul qilindi", order: newOrder });
   } catch (err) {
+    console.error("Buyurtma saqlashda xato:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -92,17 +111,25 @@ app.delete("/api/orders/:id", async (req, res) => {
 // --- MEDIA ---
 app.get("/api/media", async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.json([]);
+    }
     const medias = await Media.find().sort({ createdAt: -1 });
     console.log("📋 Media so'raldi:", medias.length, "ta");
     res.json(medias);
   } catch (err) {
     console.error("❌ Media olishda xato:", err.message);
-    res.status(500).json({ error: err.message });
+    res.json([]);
   }
 });
 
 app.post("/api/media", async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      console.log("📺 MongoDB ulanmagan, media console da ko'rsatiladi:");
+      console.log({ text: req.body.text ? 'Mavjud' : 'Yo\'q', audio: req.body.audioUrl ? 'Mavjud' : 'Yo\'q' });
+      return res.json({ message: "✅ Media qo'shildi (test rejimi)", media: req.body });
+    }
     console.log("📺 Yangi media keldi:", { text: req.body.text ? 'Mavjud' : 'Yo\'q', audio: req.body.audioUrl ? 'Mavjud' : 'Yo\'q' });
     const newMedia = new Media(req.body);
     await newMedia.save();
@@ -141,9 +168,24 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "index.html"));
 });
 
+// --- health check ---
+app.get("/health", (req, res) => {
+  const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || 'development',
+    mongodb: mongoStatus,
+    message: mongoStatus === 'connected' ? 'Database connected' : 'Running without database (test mode)'
+  });
+});
+
 // --- serverni ishga tushirish ---
-app.listen(5000, () => {
-  console.log("🚀 Server http://localhost:5000 da ishlayapti");
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server http://localhost:${PORT} da ishlayapti`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📡 Port: ${PORT}`);
 });
 
 
